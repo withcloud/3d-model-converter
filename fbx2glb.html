@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>fbx2glb</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="bg-gray-100 font-sans leading-normal tracking-normal">
+    <div class="container mx-auto px-4">
+      <h1 class="text-2xl font-bold text-center text-gray-800 my-6">
+        FBX to GLB Converter
+      </h1>
+
+      <div class="flex justify-center">
+        <div class="mb-4 w-96">
+          <label
+            class="block text-gray-700 text-sm font-bold mb-2"
+            for="file-input"
+          >
+            Select FBX File
+          </label>
+          <input
+            class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            type="file"
+            id="file-input"
+            accept=".fbx"
+          />
+        </div>
+      </div>
+
+      <div class="flex justify-center">
+        <div
+          id="canvas-container"
+          class="bg-white rounded-lg shadow overflow-hidden"
+          style="width: 400px; height: 400px"
+        ></div>
+      </div>
+
+      <div class="flex justify-center mt-4">
+        <button
+          disabled
+          class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline disabled:opacity-50"
+          id="export-button"
+        >
+          Export GLB
+        </button>
+
+        <button
+          class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline ml-4"
+          id="reset-button"
+        >
+          Reset
+        </button>
+      </div>
+    </div>
+
+    <script type="module">
+      import * as THREE from "three";
+      import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
+      import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+      import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
+
+      let scene, camera, renderer, controls, mixer, clock;
+
+      init();
+      animate();
+
+      function init() {
+        clock = new THREE.Clock();
+        const container = document.getElementById("canvas-container");
+
+        // Scene
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xadd8e6);
+
+        scene.add(new THREE.GridHelper(400, 10));
+
+        // Camera
+        camera = new THREE.PerspectiveCamera(45, 400 / 400, 1, 2000);
+        camera.position.set(100, 200, 300);
+
+        // Renderer
+        renderer = new THREE.WebGLRenderer();
+        renderer.setSize(400, 400);
+        container.appendChild(renderer.domElement);
+
+        // Controls
+        controls = new OrbitControls(camera, renderer.domElement);
+
+        // Initially disable the export button
+        setExportButtonDisabled(true);
+      }
+
+      function setExportButtonDisabled(disabled) {
+        const exportButton = document.getElementById("export-button");
+        exportButton.disabled = disabled;
+      }
+
+      document
+        .getElementById("file-input")
+        .addEventListener("change", function (e) {
+          const file = e.target.files[0];
+          if (!file) {
+            return;
+          }
+
+          const reader = new FileReader();
+          reader.onload = function (e) {
+            const contents = e.target.result;
+            const loader = new FBXLoader();
+            loader.load(contents, function (object) {
+              // Clear the scene
+              while (scene.children.length > 0) {
+                scene.remove(scene.children[0]);
+              }
+
+              // Add the loaded object to the scene
+              object.name = "my-model";
+              scene.add(object);
+
+              // Fit camera to object
+              const box = new THREE.Box3().setFromObject(object);
+              const size = box.getSize(new THREE.Vector3());
+              const center = box.getCenter(new THREE.Vector3());
+
+              // Create a grid helper that extends below the lowest point of the object
+              const gridHelper = new THREE.GridHelper(400, 10);
+              // gridHelper.position.y = object.position.y; // Align the grid with the bottom of the model
+              scene.add(gridHelper);
+
+              // Fit the object in the camera view
+              fitCameraToObject(camera, object, controls, renderer);
+
+              // controls.maxDistance = size.length() * 5;
+              // camera.near = size.length() / 100;
+              // camera.far = size.length() * 100;
+              // camera.updateProjectionMatrix();
+
+              // camera.position.copy(center);
+              // camera.position.x += size.x * 1.5; // Adjust as necessary to frame the object
+              // camera.position.y += size.y * 1.5; // Adjust as necessary to frame the object
+              // camera.position.z += size.z * 1.5; // Adjust as necessary to frame the object
+              // camera.lookAt(center);
+
+              const hemiLight = new THREE.HemisphereLight(
+                0xffffff,
+                0x444444,
+                5
+              );
+              hemiLight.position.set(0, 200, 0);
+              scene.add(hemiLight);
+
+              const dirLight = new THREE.DirectionalLight(0xffffff, 5);
+              dirLight.position.set(0, 200, 100);
+              dirLight.castShadow = true;
+              dirLight.shadow.camera.top = 180;
+              dirLight.shadow.camera.bottom = -100;
+              dirLight.shadow.camera.left = -120;
+              dirLight.shadow.camera.right = 120;
+              scene.add(dirLight);
+
+              if (object.animations.length > 0) {
+                mixer = new THREE.AnimationMixer(object);
+                mixer.clipAction(object.animations[0]).play();
+              }
+
+              setExportButtonDisabled(false);
+
+              animate();
+            });
+          };
+          reader.readAsDataURL(file);
+        });
+
+      function fitCameraToObject(camera, object, controls, renderer) {
+        const boundingBox = new THREE.Box3();
+
+        // Compute the bounding box of the object
+        boundingBox.setFromObject(object);
+
+        const size = boundingBox.getSize(new THREE.Vector3()); // Vector3 containing the size of the boundingBox
+        const center = boundingBox.getCenter(new THREE.Vector3()); // Vector3 containing the center of the boundingBox
+
+        // Calculate the distance the camera should be from the center of the bounding box
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const fov = camera.fov * (Math.PI / 180);
+        let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+
+        // Apply a factor to the distance if the object is too large or too small
+        const factor = 1.5;
+        cameraZ *= factor;
+
+        // Update the camera's position and look at the center of the bounding box
+        const directionVector = camera.position.sub(center).normalize(); // Get the direction from the camera to the center
+        const newPos = directionVector.multiplyScalar(cameraZ).add(center);
+        camera.position.copy(newPos);
+        camera.lookAt(center);
+
+        // Update the camera's near and far planes to encapsulate the object
+        camera.near = size.length() / 100;
+        camera.far = size.length() * 100;
+
+        // Update the camera's aspect ratio and projection matrix
+        camera.aspect =
+          renderer.domElement.clientWidth / renderer.domElement.clientHeight;
+        camera.updateProjectionMatrix();
+
+        // Update the orbit controls to revolve around the center of the object
+        if (controls) {
+          controls.target.copy(center);
+          controls.update();
+        }
+      }
+
+      // Reset functionality
+      document
+        .getElementById("reset-button")
+        .addEventListener("click", function () {
+          document.getElementById("file-input").value = "";
+          while (scene.children.length > 0) {
+            scene.remove(scene.children[0]);
+          }
+          scene.add(new THREE.GridHelper(400, 10));
+          setExportButtonDisabled(true);
+        });
+
+      function animate() {
+        requestAnimationFrame(animate);
+
+        const delta = clock.getDelta();
+
+        if (mixer) mixer.update(delta);
+
+        controls.update(); // only required if controls.enableDamping = true,or if controls.autoRotate = true
+        renderer.render(scene, camera);
+      }
+
+      // 在导出之前停止所有动画
+      function stopAllAnimations() {
+        if (mixer) {
+          mixer.stopAllAction();
+        }
+      }
+
+      function exportGLB(object) {
+        setExportButtonDisabled(true);
+
+        // 停止所有动画
+        stopAllAnimations();
+
+        const exporter = new GLTFExporter();
+
+        // Define your export options
+        const options = {
+          binary: true, // Export in binary (.glb) format
+          animations: object.animations, // Assuming the animations are stored here
+        };
+
+        exporter.parse(
+          object,
+          function (glb) {
+            // This is the onCompleted callback
+            const blob = new Blob([glb], { type: "model/gltf-binary" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.style.display = "none";
+            link.href = url;
+            link.download = "model.glb";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            setExportButtonDisabled(false);
+          },
+          function (error) {
+            console.error("An error happened during parsing:", error);
+            setExportButtonDisabled(false);
+          },
+          options
+        );
+      }
+
+      // 使用该函数来获取FBX模型并导出为GLB格式
+      document
+        .getElementById("export-button")
+        .addEventListener("click", function () {
+          // Retrieve the object to export, which could be the whole scene or a specific object
+          const selectedObject = scene.getObjectByName("my-model"); // Replace with your object's name
+          exportGLB(selectedObject || scene);
+        });
+    </script>
+  </body>
+</html>
