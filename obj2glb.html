@@ -147,7 +147,12 @@
                 const texture = textureLoader.load(
                   URL.createObjectURL(textureFile)
                 );
-                material.map = texture;
+
+                if(propName==='map_bump') {
+                  material.bumpMap = texture;
+                } else {
+                  material.map = texture;
+                }
               }
             }
           }
