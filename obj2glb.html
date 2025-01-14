@@ -136,14 +136,15 @@
             const material = materials.materials[materialName];
             const materialInfo = materials.materialsInfo[materialName];
             for (const propName in materialInfo) {
-              // console.log("propName", propName, materialInfo[propName])
               if (propName.startsWith("map_")) {
-                const textureFileName = materialInfo[propName];
+                let textureFileName = materialInfo[propName];
+                textureFileName = textureFileName.replace(/^\.\//, '');
+
                 const textureFile = imageFiles.find(
                   (file) => file.name === textureFileName
                 );
-                // console.log("textureFile", textureFile)
                 const textureLoader = new THREE.TextureLoader();
+
                 const texture = textureLoader.load(
                   URL.createObjectURL(textureFile)
                 );
