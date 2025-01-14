@@ -108,13 +108,42 @@
             file.type.match("image.*")
           );
 
-          if (objFile && mtlFile) {
-            loadOBJWithMTL(objFile, mtlFile, imageFiles);
+          if (objFile) {
+            if (mtlFile) {
+              loadOBJWithMTL(objFile, mtlFile, imageFiles);
+            } else {
+              loadOBJOnly(objFile);
+            }
           } else {
-            alert("Please select both an OBJ and a MTL file.");
+            alert("請選擇 OBJ 檔案。");
             setExportButtonDisabled(true);
           }
         });
+
+      function loadOBJOnly(objFile) {
+        const objLoader = new OBJLoader();
+
+        // Use FileReader to load the OBJ file content
+        const objReader = new FileReader();
+        objReader.onload = function (objEvent) {
+          const objContents = objEvent.target.result;
+          const object = objLoader.parse(objContents);
+
+          // Clear the scene and add the loaded object
+          clearScene();
+          scene.add(object);
+
+          // Fit the object in the camera view
+          fitCameraToObject(camera, object, controls, renderer);
+
+          // Set up the lighting
+          setupLighting(scene);
+
+          // Now that everything is loaded, enable the export button
+          setExportButtonDisabled(false);
+        };
+        objReader.readAsText(objFile);
+      }
 
       function loadOBJWithMTL(objFile, mtlFile, imageFiles) {
         // Create a new MTLLoader instance
@@ -136,14 +165,15 @@
             const material = materials.materials[materialName];
             const materialInfo = materials.materialsInfo[materialName];
             for (const propName in materialInfo) {
-              // console.log("propName", propName, materialInfo[propName])
               if (propName.startsWith("map_")) {
-                const textureFileName = materialInfo[propName];
+                let textureFileName = materialInfo[propName];
+                textureFileName = textureFileName.replace(/^\.\//, '');
+
                 const textureFile = imageFiles.find(
                   (file) => file.name === textureFileName
                 );
-                // console.log("textureFile", textureFile)
                 const textureLoader = new THREE.TextureLoader();
+
                 const texture = textureLoader.load(
                   URL.createObjectURL(textureFile)
                 );
